@@ -15,6 +15,9 @@
     "type": "git",
     "url": "git+https://github.com/furryaxw/koishi-plugin-markdown-to-image-service.git"
   },
+  "scripts": {
+    "build": "tsc"
+  },
   "keywords": [
     "koishi",
     "plugin",
