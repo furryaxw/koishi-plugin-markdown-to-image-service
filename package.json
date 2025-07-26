@@ -1,12 +1,30 @@
 {
   "name": "koishi-plugin-markdown-to-image-service",
-  "description": "Koishi 的 Markdown 转图片服务插件。支持 LaTeX、Mermaid、代码高亮等。",
-  "version": "1.2.5",
+  "description": "一个功能强大的 Markdown 转图片服务，支持丰富的语法和主题，并能处理来自 NapCat 等适配器的文件上传。",
+  "version": "1.0.0",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
     "lib",
     "dist"
+  ],
+  "author": "furryaxw <93119225+furryaxw@users.noreply.github.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/furryaxw/koishi-plugin-markdown-to-image-service",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/furryaxw/koishi-plugin-markdown-to-image-service.git"
+  },
+  "keywords": [
+    "koishi",
+    "plugin",
+    "markdown",
+    "image",
+    "puppeteer",
+    "service",
+    "napcat",
+    "onebot",
+    "docker"
   ],
   "koishi": {
     "service": {
@@ -18,31 +36,15 @@
       ]
     }
   },
-  "license": "MIT",
-  "author": "Nawyjx <3373167460@qq.com>",
-  "homepage": "https://www.npmjs.com/package/koishi-plugin-markdown-to-image-service?activeTab=readme",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/araea/koishi-plugin-markdown-to-image-service.git"
-  },
-  "keywords": [
-    "chatbot",
-    "koishi",
-    "plugin",
-    "markdown",
-    "md",
-    "markdown-to-image-service",
-    "服务",
-    "文本转图片",
-    "渲染"
-  ],
   "peerDependencies": {
-    "koishi": "^4.18.0"
+    "koishi": "^4.17.0",
+    "koishi-plugin-puppeteer": ""
   },
   "dependencies": {
-    "crossnote": "^0.9.10"
+    "crossnote": "^0.9.10",
+    "puppeteer-finder": "^1.1.1"
   },
   "devDependencies": {
-    "puppeteer-finder": "^1.1.1"
+    "typescript": "^5.0.0"
   }
 }

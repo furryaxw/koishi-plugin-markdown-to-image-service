@@ -11,61 +11,32 @@ export const inject = {
   required: ['puppeteer'],
 }
 export const name = 'markdown-to-image-service'
-export const usage = `## 注意事项
+export const usage = `## 使用方式
 
-引用本地图片时，请使用相对路径。
-相对路径根目录位于：\`./data/notebook\`。
+1.  **直接上传文件**: 在聊天中直接发送一个 \`.md\` 文件，机器人会自动将其转换为图片。
+2.  **使用指令**: 输入 \`markdown <你的MD文本>\` 来转换纯文本内容。
 
-若在 \`notebook\` 文件夹内，存在名为 \`0.png\` 的图片，引用方式如下：
+---
+### Docker/WSL 用户（重要！）
+如果您的 Koishi 和 OneBot 实现（如 NapCat）不在同一个操作系统环境（例如 Koishi 在 Windows，NapCat 在 Docker/WSL），您 **必须** 配置本插件的“跨环境路径映射设置”，否则无法处理上传的文件。
 
-\`\`\`markdown
-![图片介绍](0.png)
-\`\`\`
-
-## 服务
-
-- \`ctx.markdownToImage.convertToImage(markdownText: string): Promise<Buffer>\`
-
-### 示例
-
-\`\`\`typescript
-import {Context, h} from 'koishi';
-import {} from 'koishi-plugin-markdown-to-image-service';
-
-export const inject = {
-  required: ['markdownToImage'],
-};
-
-export async function apply(ctx: Context) {
-  ctx.command('test', '测试')
-    .action(async ({session}) => {
-      const markdownText = '# Hello';
-      const imageBuffer = await ctx.markdownToImage.convertToImage(markdownText);
-      return h.image(imageBuffer, 'image/png');
-    });
-}
-\`\`\`
-
-## QQ 群
-
-- 956758505
+- **容器内路径前缀**: 填入 NapCat 日志中显示的路径前缀，例如 \`/app/.config/QQ/NapCat/temp\`
+- **主机路径前缀**: 填入您在 Windows 上对应的、已挂载的真实路径，例如 \`D:\\koishi-data\\napcat-files\`
 `
 
+// 配置项接口，移除了所有 watch 相关字段
 export interface Config {
   width: number
   height: number
   deviceScaleFactor: number
   waitUntil: "load" | "domcontentloaded" | "networkidle0" | "networkidle2";
-
   enableAutoCacheClear: boolean
   enableRunAllCodeChunks: boolean;
   defaultImageFormat: "png" | "jpeg" | "webp";
-
   mermaidTheme: 'default' | 'dark' | 'forest';
   codeBlockTheme: "auto.css" | "default.css" | "atom-dark.css" | "atom-light.css" | "atom-material.css" | "coy.css" | "darcula.css" | "dark.css" | "funky.css" | "github.css" | "github-dark.css" | "hopscotch.css" | "monokai.css" | "okaidia.css" | "one-dark.css" | "one-light.css" | "pen-paper-coffee.css" | "pojoaque.css" | "solarized-dark.css" | "solarized-light.css" | "twilight.css" | "vue.css" | "vs.css" | "xonokai.css";
   previewTheme: "atom-dark.css" | "atom-light.css" | "atom-material.css" | "github-dark.css" | "github-light.css" | "gothic.css" | "medium.css" | "monokai.css" | "newsprint.css" | "night.css" | "none.css" | "one-dark.css" | "one-light.css" | "solarized-dark.css" | "solarized-light.css" | "vue.css";
   revealjsTheme: "beige.css" | "black.css" | "blood.css" | "league.css" | "moon.css" | "night.css" | "serif.css" | "simple.css" | "sky.css" | "solarized.css" | "white.css" | "none.css";
-
   breakOnSingleNewLine: boolean;
   enableLinkify: boolean;
   enableWikiLinkSyntax: boolean;
@@ -80,92 +51,36 @@ export interface Config {
   HTML5EmbedIsAllowedHttp: boolean;
   HTML5EmbedAudioAttributes: string;
   HTML5EmbedVideoAttributes: string;
-
   mathRenderingOption: "KaTeX" | "MathJax" | "None";
   mathInlineDelimiters: [string, string][];
   mathBlockDelimiters: [string, string][];
   mathRenderingOnlineService: string;
   mathjaxV3ScriptSrc: string;
-
   enableOffline: boolean;
   printBackground: boolean;
   chromePath: string;
   puppeteerArgs: string[];
-
   protocolsWhiteList: string;
+  containerPathPrefix?: string;
+  hostPathPrefix?: string;
 }
 
+// 配置项 Schema，移除了所有 watch 相关字段
 export const Config: Schema<Config> = Schema.intersect([
   Schema.object({
     width: Schema.number().default(800).description(`视图宽度。`),
     height: Schema.number().default(100).description(`视图高度。`),
     deviceScaleFactor: Schema.number().default(1).description(`设备的缩放比率。`),
-    enableAutoCacheClear: Schema.boolean().default(true).description('是否启动自动删除缓存功能。'),
+    enableAutoCacheClear: Schema.boolean().default(true).description('是否启动自动删除缓存功能。此项控制插件自身生成的临时文件。'),
     enableRunAllCodeChunks: Schema.boolean().default(false).description('文本转图片时是否执行代码块里的代码。'),
     defaultImageFormat: Schema.union(['png', 'jpeg', 'webp']).default('jpeg').description('文本转图片时默认渲染的图片格式。'),
     waitUntil: Schema.union(['load', 'domcontentloaded', 'networkidle0', 'networkidle2']).default('load').description('指定页面何时认为导航完成。使用 load 返回图片的速度会显著增加，但对于某些主题可能会未加载完全，如果出现白屏情况，请使用 networkidle0。'),
   }).description('基础设置'),
   Schema.object({
     mermaidTheme: Schema.union(['default', 'dark', 'forest']).default('default').description('Mermaid 主题。'),
-    codeBlockTheme: Schema.union([
-      'auto.css',
-      'default.css',
-      'atom-dark.css',
-      'atom-light.css',
-      'atom-material.css',
-      'coy.css',
-      'darcula.css',
-      'dark.css',
-      'funky.css',
-      'github.css',
-      'github-dark.css',
-      'hopscotch.css',
-      'monokai.css',
-      'okaidia.css',
-      'one-dark.css',
-      'one-light.css',
-      'pen-paper-coffee.css',
-      'pojoaque.css',
-      'solarized-dark.css',
-      'solarized-light.css',
-      'twilight.css',
-      'vue.css',
-      'vs.css',
-      'xonokai.css'
-    ]).default('auto.css').description('代码块主题。如果选择 `auto.css`，那么将选择与当前预览主题最匹配的代码块主题。'),
-    previewTheme: Schema.union([
-      'atom-dark.css',
-      'atom-light.css',
-      'atom-material.css',
-      'github-dark.css',
-      'github-light.css',
-      'gothic.css',
-      'medium.css',
-      'monokai.css',
-      'newsprint.css',
-      'night.css',
-      'none.css',
-      'one-dark.css',
-      'one-light.css',
-      'solarized-dark.css',
-      'solarized-light.css',
-      'vue.css'
-    ]).default('github-light.css').description('预览主题。'),
-    revealjsTheme: Schema.union([
-      'beige.css',
-      'black.css',
-      'blood.css',
-      'league.css',
-      'moon.css',
-      'night.css',
-      'serif.css',
-      'simple.css',
-      'sky.css',
-      'solarized.css',
-      'white.css',
-      'none.css',
-    ]).default('white.css').description('Revealjs 演示主题。')
-
+    codeBlockTheme: Schema.union(['auto.css','default.css','atom-dark.css','atom-light.css','atom-material.css','coy.css','darcula.css','dark.css','funky.css','github.css','github-dark.css','hopscotch.css','monokai.css','okaidia.css','one-dark.css','one-light.css','pen-paper-coffee.css','pojoaque.css','solarized-dark.css','solarized-light.css','twilight.css','vue.css','vs.css','xonokai.css']).default('auto.css').description('代码块主题。如果选择 `auto.css`，那么将选择与当前预览主题最匹配的代码块主题。'),
+    previewTheme: Schema.union(['atom-dark.css','atom-light.css','atom-material.css','github-dark.css','github-light.css','gothic.css','medium.css','monokai.css','newsprint.css','night.css','none.css','one-dark.css','one-light.css','solarized-dark.css','solarized-light.css','vue.css']).default('github-light.css').description('预览主题。'),
+    revealjsTheme: Schema.union(['beige.css','black.css','blood.css','league.css','moon.css','night.css','serif.css','simple.css','sky.css','solarized.css','white.css','none.css',]).default('white.css').description('Revealjs 演示主题。')
   }).description('主题相关设置'),
   Schema.object({
     breakOnSingleNewLine: Schema.boolean().default(true).description('在 Markdown 中，单个换行符不会在生成的 HTML 中导致换行。在 GitHub Flavored Markdown 中，情况并非如此。启用此配置选项以在渲染的 HTML 中为 Markdown 源中的单个换行符插入换行。'),
@@ -199,10 +114,12 @@ export const Config: Schema<Config> = Schema.intersect([
   Schema.object({
     protocolsWhiteList: Schema.string().default('http://, https://, atom://, file://, mailto:, tel:').description('链接的接受协议白名单。'),
   }).description('其他设置'),
+  Schema.object({
+    containerPathPrefix: Schema.string().description('【Docker/WSL 用户专用】由 OneBot 实现 (如 NapCat) 返回的路径前缀。例如: `/app/.config/QQ/NapCat/temp`。'),
+    hostPathPrefix: Schema.string().description('【Docker/WSL 用户专用】与容器内路径对应的、在 Koishi 主机上的路径前缀。例如: `D:\\koishi-data\\napcat-files` (请确保路径存在且已正确挂载)。'),
+  }).description('跨环境路径映射设置'),
 ]) as any
 
-
-// 声明合并 Context ctx.markdownToImage()
 declare module 'koishi' {
   interface Context {
     markdownToImage: MarkdownToImageService
@@ -231,6 +148,7 @@ class MarkdownToImageService extends Service {
   }
 
   private async initNotebook(): Promise<void> {
+    // ... 此方法内容不变 ...
     const {
       breakOnSingleNewLine,
       enableLinkify,
@@ -327,18 +245,14 @@ class MarkdownToImageService extends Service {
     const readmeHtmlPath = path.join(this.notebookDirPath, `${currentTimeString}.html`);
 
     await fs.promises.writeFile(readmeFilePath, markdownText);
-
     const engine = this.notebook.getNoteMarkdownEngine(readmeFilePath);
     await engine.htmlExport({offline: enableOffline, runAllCodeChunks: enableRunAllCodeChunks});
 
     const context = await this.browser.createBrowserContext();
     const page = await context.newPage();
-
     await page.setViewport({width, height, deviceScaleFactor});
     await page.goto('file://' + readmeHtmlPath.replace(/\\/g, '/'), {waitUntil});
-
     const imageBuffer = await page.screenshot({fullPage: true, type: defaultImageFormat});
-
     await page.close();
     await context.close();
 
@@ -353,16 +267,9 @@ class MarkdownToImageService extends Service {
   }
 
   async convertToImage(markdownText: string): Promise<Buffer> {
-    if (!this.browser) {
-      await this.initBrowser();
-    }
-
-    if (!this.notebook) {
-      await this.initNotebook();
-    }
-
+    if (!this.browser) await this.initBrowser();
+    if (!this.notebook) await this.initNotebook();
     await this.ensureDirExists(this.notebookDirPath);
-
     try {
       return await this.generateAndSaveImage(markdownText);
     } catch (error) {
@@ -372,24 +279,87 @@ class MarkdownToImageService extends Service {
   }
 }
 
-// export default MarkdownToImageService;
-
 export async function apply(ctx: Context, config: Config) {
-  ctx.inject(['puppeteer'], (ctx) => {
-    ctx.plugin(MarkdownToImageService, config);
+  ctx.plugin(MarkdownToImageService, config);
+  const logger = ctx.logger('markdownToImage');
 
-    ctx.command('markdownToImage [markdownText:text]', '将 Markdown 文本转换为图片')
-      .action(async ({session}, markdownText) => {
-        if (!markdownText) {
-          await session.send('请输入你要转换的 Markdown 文本内容：');
-          const userInput = await session.prompt();
-          if (!userInput) return `输入超时。`;
-          markdownText = userInput;
+  // 中间件：用于自动处理用户上传的 .md 文件
+  ctx.middleware(async (session, next) => {
+    if (session.elements.length === 1 && (session.elements[0].type === 'asset' || session.elements[0].type === 'file')) {
+      const fileElement = session.elements[0];
+      const originalFilename = fileElement.attrs.file || fileElement.attrs.src || '';
+
+      if (originalFilename.endsWith('.md')) {
+        logger.info(`[中间件] 检测到 Markdown 文件上传: ${originalFilename}`);
+        await session.send('接收到 Markdown 文件，正在处理...');
+        let content: string = '';
+        const fileId = fileElement.attrs.fileId;
+        
+        // @ts-ignore
+        if (fileId && session.onebot?._request) {
+          try {
+            // @ts-ignore
+            const { retcode, data, message } = await session.onebot._request('get_file', { file_id: fileId });
+            if (retcode === 0 && data?.file) {
+              let localFilePath = data.file;
+              logger.info(`[中间件] OneBot 实现已将文件保存到容器内路径: ${localFilePath}`);
+              
+              if (config.containerPathPrefix && config.hostPathPrefix) {
+                if (localFilePath.startsWith(config.containerPathPrefix)) {
+                  const relativePath = path.relative(config.containerPathPrefix, localFilePath);
+                  const hostPath = path.join(config.hostPathPrefix, relativePath);
+                  logger.info(`[中间件] 应用路径映射，转换主机路径为: ${hostPath}`);
+                  localFilePath = hostPath;
+                } else {
+                  logger.warn(`[中间件] 文件路径 '${localFilePath}' 不以配置的容器路径前缀 '${config.containerPathPrefix}' 开头，映射未生效。`);
+                }
+              }
+              content = await fs.promises.readFile(localFilePath, 'utf-8');
+            } else {
+              logger.error(`[中间件] "get_file" API 调用失败。Retcode: ${retcode}, Message: ${message || '无'}`);
+              return session.send(`请求文件下载失败: ${message || '未知错误'}`);
+            }
+          } catch (error) {
+            logger.error('[中间件] 处理文件时出错:', error);
+            if (error.code === 'ENOENT') {
+              return session.send(`处理文件时发生错误：找不到文件或目录。\n这通常意味着路径映射配置不正确或文件挂载未生效。\n尝试读取的路径: ${error.path}`);
+            }
+            return session.send('处理文件时发生内部错误，请检查后台日志。');
+          }
+        } else {
+          return session.send('抱歉，当前环境不支持处理文件上传（未找到 onebot._request 方法）。');
         }
-        const markdownToImage = new MarkdownToImageService(ctx, config);
-        const imageBuffer = await markdownToImage.convertToImage(markdownText);
-        return h.image(imageBuffer, `image/${config.defaultImageFormat}`);
-      });
+
+        if (content) {
+          try {
+            await session.send('文件内容已获取，正在生成图片...');
+            const imageBuffer = await ctx.markdownToImage.convertToImage(content);
+            return h.image(imageBuffer, `image/${config.defaultImageFormat}`);
+          } catch (error) {
+            logger.error('转换 Markdown 时发生错误:', error);
+            return session.send(`转换 Markdown 时发生错误：\n${error.message}`);
+          }
+        } else {
+          return session.send('未能成功读取文件内容，操作中止。');
+        }
+      }
+    }
+    return next();
   });
 
+  // 指令：用于处理用户输入的纯文本 Markdown
+  ctx.command('markdown <markdownText:text>', '将 Markdown 纯文本内容转换为图片')
+    .alias('markdownToImage')
+    .action(async ({session}, markdownText) => {
+      // 简化指令，不再使用 prompt，没有文本时直接提示用法
+      if (!markdownText) return '请直接在指令后输入要转换的 Markdown 文本，或直接上传一个 .md 文件。';
+      try {
+        await session.send('接收到文本内容，正在生成图片...');
+        const imageBuffer = await ctx.markdownToImage.convertToImage(markdownText);
+        return h.image(imageBuffer, `image/${config.defaultImageFormat}`);
+      } catch (error) {
+        logger.error('转换 Markdown 时发生错误:', error);
+        return `转换 Markdown 时发生错误：\n${error.message}`;
+      }
+    });
 }
