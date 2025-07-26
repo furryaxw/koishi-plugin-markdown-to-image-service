@@ -1,6 +1,6 @@
-# @furryaxw/koishi-plugin-markdown-to-image-service
+# @axw_/koishi-plugin-markdown-to-image-service
 
-[![npm](https://img.shields.io/npm/v/@furryaxw/koishi-plugin-markdown-to-image-service?style=flat-square)](https://www.npmjs.com/package/@furryaxw/koishi-plugin-markdown-to-image-service)
+[![npm](https://img.shields.io/npm/v/@axw_/koishi-plugin-markdown-to-image-service?style=flat-square)](https://www.npmjs.com/package/@axw_/koishi-plugin-markdown-to-image-service)
 
 ## 简介
 
