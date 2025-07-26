@@ -1,5 +1,5 @@
 {
-  "name": "koishi-plugin-markdown-to-image-service",
+  "name": "@furryaxw/koishi-plugin-markdown-to-image-service",
   "description": "一个功能强大的 Markdown 转图片服务，支持丰富的语法和主题，并能处理来自 NapCat 等适配器的文件上传。",
   "version": "1.0.0",
   "main": "lib/index.js",
@@ -23,8 +23,13 @@
     "puppeteer",
     "service",
     "napcat",
-    "onebot",
-    "docker"
+    "docker",
+    "chatbot",
+    "md",
+    "markdown-to-image-service",
+    "服务",
+    "文本转图片",
+    "渲染"
   ],
   "koishi": {
     "service": {
