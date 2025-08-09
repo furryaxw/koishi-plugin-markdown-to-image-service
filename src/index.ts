@@ -7,6 +7,15 @@ import {promisify} from 'util';
 import {Notebook} from "crossnote"
 import find from 'puppeteer-finder';
 
+const MIME_TYPES: { [key: string]: string } = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+};
+
 export const inject = {
   required: ['puppeteer'],
 }
@@ -18,18 +27,18 @@ export const usage = `## 使用方式
 
 ---
 ### Docker/WSL 用户（重要！）
-如果您的 Koishi 和 OneBot 实现（如 NapCat）不在同一个操作系统环境（例如 Koishi 在 Windows，NapCat 在 Docker/WSL），您 **必须** 配置本插件的“跨环境路径映射设置”，否则无法处理上传的文件。
+如果您的 Koishi 和 OneBot 实现（如 NapCat）在不同的 Docker 容器中，您 **必须** 配置“跨环境路径映射设置”，否则**无法处理上传的文件**。
 
-- **容器内路径前缀**: 填入 NapCat 日志中显示的路径前缀，例如 \`/app/.config/QQ/NapCat/temp\`
-- **主机路径前缀**: 填入您在 Windows 上对应的、已挂载的真实路径，例如 \`D:\\koishi-data\\napcat-files\`
+- **容器内路径前缀**: 填入 NapCat 返回的路径前缀，例如 \`/app/.config/QQ/NapCat/temp\`
+- **主机/Koishi容器路径前缀**: 填入与上述路径对应的、Koishi 可以访问的路径，例如 \`/koishi/data/shared_files\`
 `
 
-// 配置项接口，移除了所有 watch 相关字段
 export interface Config {
-  width: number
-  height: number
-  deviceScaleFactor: number
+  width: number;
+  height: number;
+  deviceScaleFactor: number;
   waitUntil: "load" | "domcontentloaded" | "networkidle0" | "networkidle2";
+  timeout: number;
   enableAutoCacheClear: boolean
   enableRunAllCodeChunks: boolean;
   defaultImageFormat: "png" | "jpeg" | "webp";
@@ -65,16 +74,16 @@ export interface Config {
   hostPathPrefix?: string;
 }
 
-// 配置项 Schema，移除了所有 watch 相关字段
 export const Config: Schema<Config> = Schema.intersect([
   Schema.object({
     width: Schema.number().default(800).description(`视图宽度。`),
     height: Schema.number().default(100).description(`视图高度。`),
     deviceScaleFactor: Schema.number().default(1).description(`设备的缩放比率。`),
     enableAutoCacheClear: Schema.boolean().default(true).description('是否启动自动删除缓存功能。此项控制插件自身生成的临时文件。'),
-    enableRunAllCodeChunks: Schema.boolean().default(false).description('文本转图片时是否执行代码块里的代码。'),
     defaultImageFormat: Schema.union(['png', 'jpeg', 'webp']).default('jpeg').description('文本转图片时默认渲染的图片格式。'),
-    waitUntil: Schema.union(['load', 'domcontentloaded', 'networkidle0', 'networkidle2']).default('load').description('指定页面何时认为导航完成。使用 load 返回图片的速度会显著增加，但对于某些主题可能会未加载完全，如果出现白屏情况，请使用 networkidle0。'),
+    waitUntil: Schema.union(['load', 'domcontentloaded', 'networkidle0', 'networkidle2']).default('load').description('指定页面何时认为导航完成。如果渲染复杂图表时超时，可尝试切换为 `load`。'),
+    timeout: Schema.number().default(60000).description('Puppeteer 页面渲染超时时间（毫秒）。如果渲染复杂内容时卡死或报错，请尝试增加此值。'),
+    enableRunAllCodeChunks: Schema.boolean().default(false).description('文本转图片时是否执行代码块里的代码。'),
   }).description('基础设置'),
   Schema.object({
     mermaidTheme: Schema.union(['default', 'dark', 'forest']).default('default').description('Mermaid 主题。'),
@@ -115,9 +124,9 @@ export const Config: Schema<Config> = Schema.intersect([
     protocolsWhiteList: Schema.string().default('http://, https://, atom://, file://, mailto:, tel:').description('链接的接受协议白名单。'),
   }).description('其他设置'),
   Schema.object({
-    containerPathPrefix: Schema.string().description('【Docker/WSL 用户专用】由 OneBot 实现 (如 NapCat) 返回的路径前缀。例如: `/app/.config/QQ/NapCat/temp`。'),
-    hostPathPrefix: Schema.string().description('【Docker/WSL 用户专用】与容器内路径对应的、在 Koishi 主机上的路径前缀。例如: `D:\\koishi-data\\napcat-files` (请确保路径存在且已正确挂载)。'),
-  }).description('跨环境路径映射设置'),
+    containerPathPrefix: Schema.string().description('【文件上传专用】OneBot 实现 (如 NapCat) 所在的容器或环境提供的路径前缀。例如: `/app/.config/QQ/NapCat/temp`。'),
+    hostPathPrefix: Schema.string().description('【文件上传专用】与上述路径对应的、Koishi 所在的容器或主机可以访问的路径前缀。例如: `/koishi/data/shared_temp`。'),
+  }).description('跨环境路径映射设置 (用于处理文件上传)'),
 ]) as any
 
 declare module 'koishi' {
@@ -148,35 +157,16 @@ class MarkdownToImageService extends Service {
   }
 
   private async initNotebook(): Promise<void> {
-    // ... 此方法内容不变 ...
     const {
-      breakOnSingleNewLine,
-      enableLinkify,
-      mathRenderingOption,
-      mathInlineDelimiters,
-      mathBlockDelimiters,
-      mathRenderingOnlineService,
-      mathjaxV3ScriptSrc,
-      enableWikiLinkSyntax,
-      enableEmojiSyntax,
-      enableExtendedTableSyntax,
-      enableCriticMarkupSyntax,
-      frontMatterRenderingOption,
-      mermaidTheme,
-      codeBlockTheme,
-      previewTheme,
-      revealjsTheme,
-      protocolsWhiteList,
-      printBackground,
-      chromePath,
-      enableScriptExecution,
-      enableHTML5Embed,
-      HTML5EmbedUseImageSyntax,
-      HTML5EmbedUseLinkSyntax,
-      HTML5EmbedIsAllowedHttp,
-      HTML5EmbedAudioAttributes,
-      HTML5EmbedVideoAttributes,
-      puppeteerArgs,
+      breakOnSingleNewLine, enableLinkify, mathRenderingOption,
+      mathInlineDelimiters, mathBlockDelimiters, mathRenderingOnlineService,
+      mathjaxV3ScriptSrc, enableWikiLinkSyntax, enableEmojiSyntax,
+      enableExtendedTableSyntax, enableCriticMarkupSyntax,
+      frontMatterRenderingOption, mermaidTheme, codeBlockTheme,
+      previewTheme, revealjsTheme, protocolsWhiteList, printBackground,
+      chromePath, enableScriptExecution, enableHTML5Embed,
+      HTML5EmbedUseImageSyntax, HTML5EmbedUseLinkSyntax, HTML5EmbedIsAllowedHttp,
+      HTML5EmbedAudioAttributes, HTML5EmbedVideoAttributes, puppeteerArgs,
     } = this.config;
 
     const resolvedChromePath = chromePath || await find();
@@ -184,33 +174,15 @@ class MarkdownToImageService extends Service {
     this.notebook = await Notebook.init({
       notebookPath: this.notebookDirPath,
       config: {
-        breakOnSingleNewLine,
-        enableLinkify,
-        mathRenderingOption,
-        mathInlineDelimiters,
-        mathBlockDelimiters,
-        mathRenderingOnlineService,
-        mathjaxV3ScriptSrc,
-        enableWikiLinkSyntax,
-        enableEmojiSyntax,
-        enableExtendedTableSyntax,
-        enableCriticMarkupSyntax,
-        frontMatterRenderingOption,
-        mermaidTheme,
-        codeBlockTheme,
-        previewTheme,
-        revealjsTheme,
-        protocolsWhiteList,
-        printBackground,
-        chromePath: resolvedChromePath,
-        enableScriptExecution,
-        enableHTML5Embed,
-        HTML5EmbedUseImageSyntax,
-        HTML5EmbedUseLinkSyntax,
-        HTML5EmbedIsAllowedHttp,
-        HTML5EmbedAudioAttributes,
-        HTML5EmbedVideoAttributes,
-        puppeteerArgs,
+        breakOnSingleNewLine, enableLinkify, mathRenderingOption,
+        mathInlineDelimiters, mathBlockDelimiters, mathRenderingOnlineService,
+        mathjaxV3ScriptSrc, enableWikiLinkSyntax, enableEmojiSyntax,
+        enableExtendedTableSyntax, enableCriticMarkupSyntax,
+        frontMatterRenderingOption, mermaidTheme, codeBlockTheme,
+        previewTheme, revealjsTheme, protocolsWhiteList, printBackground,
+        chromePath: resolvedChromePath, enableScriptExecution, enableHTML5Embed,
+        HTML5EmbedUseImageSyntax, HTML5EmbedUseLinkSyntax, HTML5EmbedIsAllowedHttp,
+        HTML5EmbedAudioAttributes, HTML5EmbedVideoAttributes, puppeteerArgs,
       },
     });
   }
@@ -228,41 +200,66 @@ class MarkdownToImageService extends Service {
     return `${dateString}_${randomString}`;
   }
 
-  private async generateAndSaveImage(markdownText: string): Promise<Buffer> {
+  private async generateAndRenderImage(markdownText: string): Promise<Buffer> {
     const {
-      height,
-      width,
-      deviceScaleFactor,
-      waitUntil,
-      enableOffline,
-      enableRunAllCodeChunks,
-      defaultImageFormat,
-      enableAutoCacheClear
+      height, width, deviceScaleFactor, waitUntil, timeout,
+      enableOffline, enableRunAllCodeChunks, defaultImageFormat, enableAutoCacheClear
     } = this.config;
 
     const currentTimeString = this.getCurrentTimeNumberString();
     const readmeFilePath = path.join(this.notebookDirPath, `${currentTimeString}.md`);
     const readmeHtmlPath = path.join(this.notebookDirPath, `${currentTimeString}.html`);
-
     await fs.promises.writeFile(readmeFilePath, markdownText);
-    const engine = this.notebook.getNoteMarkdownEngine(readmeFilePath);
-    await engine.htmlExport({offline: enableOffline, runAllCodeChunks: enableRunAllCodeChunks});
 
+    // 步骤 1: 使用已知的、稳定的 htmlExport 方法生成临时 HTML 文件
+    const engine = this.notebook.getNoteMarkdownEngine(readmeFilePath);
+    await engine.htmlExport({ offline: enableOffline, runAllCodeChunks: enableRunAllCodeChunks });
+
+    // 步骤 2: 将生成的 HTML 文件内容读回内存
+    let html = await fs.promises.readFile(readmeHtmlPath, 'utf-8');
+
+    // 步骤 3: 将 HTML 中的本地图片引用转换为 Base64 Data URI
+    const imgRegex = /<img src="(?!(https?|data):)([^"]+)"/g;
+    const replacements = [];
+    let match;
+    while ((match = imgRegex.exec(html)) !== null) {
+      const originalSrc = match[0];
+      const imagePath = match[2];
+      const absoluteImagePath = path.resolve(this.notebookDirPath, imagePath);
+      if (fs.existsSync(absoluteImagePath)) {
+        try {
+          const imageBuffer = await fs.promises.readFile(absoluteImagePath);
+          const ext = path.extname(imagePath).toLowerCase();
+          const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
+          const base64 = imageBuffer.toString('base64');
+          const newSrc = `<img src="data:${mimeType};base64,${base64}"`;
+          replacements.push({ find: originalSrc, replace: newSrc });
+        } catch (error) {
+            this.loggerForService.warn(`读取本地图片失败: ${absoluteImagePath}`, error);
+        }
+      }
+    }
+    for (const rep of replacements) {
+      html = html.replace(rep.find, rep.replace);
+    }
+
+    // 步骤 4: 使用 page.setContent 直接加载 HTML 字符串
     const context = await this.browser.createBrowserContext();
     const page = await context.newPage();
     await page.setViewport({width, height, deviceScaleFactor});
-    await page.goto('file://' + readmeHtmlPath.replace(/\\/g, '/'), {waitUntil});
+    await page.setContent(html, { waitUntil, timeout });
+
     const imageBuffer = await page.screenshot({fullPage: true, type: defaultImageFormat});
     await page.close();
     await context.close();
 
+    // 步骤 5: 清理所有临时文件
     if (enableAutoCacheClear) {
       await Promise.all([
-        fs.promises.unlink(readmeHtmlPath),
-        fs.promises.unlink(readmeFilePath)
+        fs.promises.unlink(readmeFilePath),
+        fs.promises.unlink(readmeHtmlPath) // 确保 html 文件也被删除
       ]);
     }
-
     return imageBuffer;
   }
 
@@ -271,7 +268,7 @@ class MarkdownToImageService extends Service {
     if (!this.notebook) await this.initNotebook();
     await this.ensureDirExists(this.notebookDirPath);
     try {
-      return await this.generateAndSaveImage(markdownText);
+      return await this.generateAndRenderImage(markdownText);
     } catch (error) {
       this.loggerForService.error('Error converting markdown to image:', error);
       throw error;
@@ -283,83 +280,77 @@ export async function apply(ctx: Context, config: Config) {
   ctx.plugin(MarkdownToImageService, config);
   const logger = ctx.logger('markdownToImage');
 
-  // 中间件：用于自动处理用户上传的 .md 文件
-  ctx.middleware(async (session, next) => {
-    if (session.elements.length === 1 && (session.elements[0].type === 'asset' || session.elements[0].type === 'file')) {
-      const fileElement = session.elements[0];
-      const originalFilename = fileElement.attrs.file || fileElement.attrs.src || '';
+  ctx.inject(['markdownToImage'], (ctx) => {
+    ctx.middleware(async (session, next) => {
+      if (session.elements && session.elements.length === 1 && (session.elements[0].type === 'asset' || session.elements[0].type === 'file')) {
+        const fileElement = session.elements[0];
+        const originalFilename = fileElement.attrs.file || fileElement.attrs.src || '';
+        if (originalFilename.endsWith('.md')) {
+          logger.info(`[中间件] 检测到 Markdown 文件上传: ${originalFilename}`);
+          await session.send('接收到 Markdown 文件，正在处理...');
+          let content: string = '';
+          const fileId = fileElement.attrs.fileId;
+          // @ts-ignore
+          if (fileId && session.onebot?._request) {
+            try {
+              // @ts-ignore
+              const { retcode, data, message } = await session.onebot._request('get_file', { file_id: fileId });
+              if (retcode === 0 && data?.file) {
+                let localFilePath = data.file;
+                logger.info(`[中间件] OneBot 实现返回路径: ${localFilePath}`);
 
-      if (originalFilename.endsWith('.md')) {
-        logger.info(`[中间件] 检测到 Markdown 文件上传: ${originalFilename}`);
-        await session.send('接收到 Markdown 文件，正在处理...');
-        let content: string = '';
-        const fileId = fileElement.attrs.fileId;
-        
-        // @ts-ignore
-        if (fileId && session.onebot?._request) {
-          try {
-            // @ts-ignore
-            const { retcode, data, message } = await session.onebot._request('get_file', { file_id: fileId });
-            if (retcode === 0 && data?.file) {
-              let localFilePath = data.file;
-              logger.info(`[中间件] OneBot 实现已将文件保存到容器内路径: ${localFilePath}`);
-              
-              if (config.containerPathPrefix && config.hostPathPrefix) {
-                if (localFilePath.startsWith(config.containerPathPrefix)) {
-                  const relativePath = path.relative(config.containerPathPrefix, localFilePath);
-                  const hostPath = path.join(config.hostPathPrefix, relativePath);
-                  logger.info(`[中间件] 应用路径映射，转换主机路径为: ${hostPath}`);
-                  localFilePath = hostPath;
-                } else {
-                  logger.warn(`[中间件] 文件路径 '${localFilePath}' 不以配置的容器路径前缀 '${config.containerPathPrefix}' 开头，映射未生效。`);
+                // 如果配置了路径映射，则进行转换
+                if (config.containerPathPrefix && config.hostPathPrefix) {
+                  if (localFilePath.startsWith(config.containerPathPrefix)) {
+                    const relativePath = path.relative(config.containerPathPrefix, localFilePath);
+                    const hostPath = path.join(config.hostPathPrefix, relativePath);
+                    logger.info(`[中间件] 应用路径映射，转换后路径为: ${hostPath}`);
+                    localFilePath = hostPath;
+                  } else {
+                    logger.warn(`[中间件] 文件路径 '${localFilePath}' 不以前缀 '${config.containerPathPrefix}' 开头，映射未生效。`);
+                  }
                 }
+                content = await fs.promises.readFile(localFilePath, 'utf-8');
+              } else {
+                return session.send(`请求文件下载失败: ${message || '未知错误'}`);
               }
-              content = await fs.promises.readFile(localFilePath, 'utf-8');
-            } else {
-              logger.error(`[中间件] "get_file" API 调用失败。Retcode: ${retcode}, Message: ${message || '无'}`);
-              return session.send(`请求文件下载失败: ${message || '未知错误'}`);
+            } catch (error: any) {
+              if (error.code === 'ENOENT') {
+                return session.send(`处理文件时发生错误：找不到文件或目录。\n这通常意味着路径映射配置不正确或文件挂载未生效。\n尝试读取的路径: ${error.path}`);
+              }
+              return session.send(`处理文件时发生内部错误: ${error.message}`);
             }
-          } catch (error) {
-            logger.error('[中间件] 处理文件时出错:', error);
-            if (error.code === 'ENOENT') {
-              return session.send(`处理文件时发生错误：找不到文件或目录。\n这通常意味着路径映射配置不正确或文件挂载未生效。\n尝试读取的路径: ${error.path}`);
+          } else {
+            return session.send('抱歉，当前环境不支持处理文件上传（未找到 onebot._request 方法）。');
+          }
+          if (content) {
+            try {
+              await session.send('文件内容已获取，正在生成图片...');
+              const imageBuffer = await ctx.markdownToImage.convertToImage(content);
+              return h.image(imageBuffer, `image/${config.defaultImageFormat}`);
+            } catch (error: any) {
+              return session.send(`转换 Markdown 时发生错误：\n${error.message}`);
             }
-            return session.send('处理文件时发生内部错误，请检查后台日志。');
+          } else {
+            return session.send('未能成功读取文件内容，操作中止。');
           }
-        } else {
-          return session.send('抱歉，当前环境不支持处理文件上传（未找到 onebot._request 方法）。');
-        }
-
-        if (content) {
-          try {
-            await session.send('文件内容已获取，正在生成图片...');
-            const imageBuffer = await ctx.markdownToImage.convertToImage(content);
-            return h.image(imageBuffer, `image/${config.defaultImageFormat}`);
-          } catch (error) {
-            logger.error('转换 Markdown 时发生错误:', error);
-            return session.send(`转换 Markdown 时发生错误：\n${error.message}`);
-          }
-        } else {
-          return session.send('未能成功读取文件内容，操作中止。');
         }
       }
-    }
-    return next();
-  });
-
-  // 指令：用于处理用户输入的纯文本 Markdown
-  ctx.command('markdown <markdownText:text>', '将 Markdown 纯文本内容转换为图片')
-    .alias('markdownToImage')
-    .action(async ({session}, markdownText) => {
-      // 简化指令，不再使用 prompt，没有文本时直接提示用法
-      if (!markdownText) return '请直接在指令后输入要转换的 Markdown 文本，或直接上传一个 .md 文件。';
-      try {
-        await session.send('接收到文本内容，正在生成图片...');
-        const imageBuffer = await ctx.markdownToImage.convertToImage(markdownText);
-        return h.image(imageBuffer, `image/${config.defaultImageFormat}`);
-      } catch (error) {
-        logger.error('转换 Markdown 时发生错误:', error);
-        return `转换 Markdown 时发生错误：\n${error.message}`;
-      }
+      return next();
     });
+
+    ctx.command('markdown <markdownText:text>', '将 Markdown 纯文本内容转换为图片')
+      .alias('markdownToImage')
+      .action(async ({ session }, markdownText) => {
+        if (!session) return '该指令无法在无会话上下文的环境中执行。';
+        if (!markdownText) return '请直接在指令后输入要转换的 Markdown 文本，或直接上传一个 .md 文件。';
+        try {
+          await session.send('接收到文本内容，正在生成图片...');
+          const imageBuffer = await ctx.markdownToImage.convertToImage(markdownText);
+          return h.image(imageBuffer, `image/${config.defaultImageFormat}`);
+        } catch (error: any) {
+          return `转换 Markdown 时发生错误：\n${error.message}`;
+        }
+      });
+  });
 }
